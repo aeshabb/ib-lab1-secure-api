@@ -1,7 +1,5 @@
 # Защищённый REST API
 
-Лабораторная работа 1 по информационной безопасности. Руссу Алексей Иванович, P3417, ИТМО, 2026.
-
 Приложение на Java 21 и Spring Boot 4.1.2 реализует регистрацию, вход и получение профиля. Данные хранятся в H2, доступ к базе выполняется через Spring Data JPA/Hibernate.
 
 ## Запуск
@@ -71,3 +69,8 @@ curl -i -H "Authorization: Bearer $TOKEN" \
 Workflow `.github/workflows/ci.yml` запускается при каждом push и pull request. Задание `sast` собирает приложение и выполняет SpotBugs с Find Security Bugs. Задание `sca` запускает OWASP Dependency-Check и завершает сборку ошибкой при CVSS ≥ 7. XML-отчёт SAST и HTML/JSON-отчёты SCA сохраняются в артефактах запуска.
 
 [Запуски pipeline](https://github.com/aeshabb/ib-lab1-secure-api/actions/workflows/ci.yml).
+
+[Контрольный запуск](https://github.com/aeshabb/ib-lab1-secure-api/actions/runs/40777368338) завершился успешно: SAST — 0 замечаний, SCA — 49 зависимостей и 0 найденных уязвимостей.
+
+![Успешная проверка SAST](docs/actions-sast.png)
+![Успешная проверка SCA](docs/actions-sca.png)
