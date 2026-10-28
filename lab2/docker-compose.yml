@@ -1,0 +1,27 @@
+name: lab2-cve-2024-23334
+services:
+  vulnerable:
+    image: vulhub/aiohttp:3.9.1
+    ports: ["127.0.0.1:8080:8080"]
+    volumes:
+      - ./static:/app/static:ro
+      - ./private:/app/private:ro
+  updated:
+    build: .
+    environment:
+      FOLLOW_SYMLINKS: "true"
+    ports: ["127.0.0.1:8081:8080"]
+  configuration:
+    image: vulhub/aiohttp:3.9.1
+    command: ["python", "/app/app.py"]
+    environment:
+      HOST: "0.0.0.0"
+      FOLLOW_SYMLINKS: "false"
+    volumes:
+      - ./app.py:/app/app.py:ro
+      - ./static:/app/static:ro
+      - ./private:/app/private:ro
+    ports: ["127.0.0.1:8082:8080"]
+  combined:
+    build: .
+    ports: ["127.0.0.1:8083:8080"]

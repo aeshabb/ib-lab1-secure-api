@@ -1,99 +1,84 @@
-name: Java security checks
+name: Lab 2 Docker verification
 on:
   push:
-  pull_request:
+    branches: [codex/lab2-docker-verification]
   workflow_dispatch:
 permissions:
   contents: read
 jobs:
-  test-and-sast:
-    runs-on: ubuntu-latest
+  docker-lab:
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: lab2
+        shell: bash
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '21'
-          cache: maven
-      - name: Tests and package
-        run: mvn -B -ntp verify
-      - name: SpotBugs and Find Security Bugs
-        run: mvn -B -ntp spotbugs:check
-      - name: Summarize tests and SAST
-        if: always()
+      - name: Record Docker environment and clone Vulhub
         run: |
+          mkdir -p evidence
+          { date --iso-8601=seconds; uname -a; docker version; docker compose version; } | tee evidence/docker-environment.txt
+          git clone --depth 1 --filter=blob:none --sparse https://github.com/vulhub/vulhub.git upstream-live
+          git -C upstream-live sparse-checkout set python/CVE-2024-23334 base/python/aiohttp/3.9.1
+          git -C upstream-live rev-parse HEAD | tee evidence/vulhub-commit.txt
+          cp upstream-live/python/CVE-2024-23334/docker-compose.yml evidence/vulhub-original-compose.yml
+          docker compose config > evidence/compose-resolved.yml
+      - name: Start vulnerable Vulhub container and reproduce attack
+        run: |
+          docker compose up -d vulnerable 2>&1 | tee evidence/start-vulnerable.txt
+          for i in $(seq 1 60); do curl --noproxy '*' -fsS http://127.0.0.1:8080/ && break || sleep 1; done
+          docker compose ps | tee evidence/containers-before.txt
+          docker compose exec -T vulnerable python -c "import aiohttp,sys;print(sys.version);print('aiohttp='+aiohttp.__version__)" | tee evidence/version-before.txt
+          curl --noproxy '*' --path-as-is -i http://127.0.0.1:8080/static/../private/demo.txt | tee evidence/curl-before.txt
+          grep -q LAB_ONLY_SECRET_CVE_2024_23334 evidence/curl-before.txt
+          docker compose down 2>&1 | tee evidence/stop-before-fix.txt
+      - name: Build and start corrected configurations
+        run: |
+          docker compose up --build -d 2>&1 | tee evidence/start-corrected.txt
+          for port in 8080 8081 8082 8083; do
+            for i in $(seq 1 60); do curl --noproxy '*' -fsS http://127.0.0.1:$port/ && break || sleep 1; done
+          done
+          docker compose ps | tee evidence/containers-after.txt
+          for service in vulnerable updated configuration combined; do
+            echo "SERVICE=$service"
+            docker compose exec -T "$service" python -c "import aiohttp,sys,platform;print(sys.version);print(platform.platform());print('aiohttp='+aiohttp.__version__)"
+          done | tee evidence/versions-after.txt
+          docker inspect $(docker compose ps -q) > evidence/docker-inspect.json
+      - name: Repeat identical attack and test normal functionality
+        run: |
+          for port in 8080 8081 8082 8083; do
+            { echo "GET /static/../private/demo.txt on $port"; curl --noproxy '*' --path-as-is -i http://127.0.0.1:$port/static/../private/demo.txt; } > evidence/curl-attack-$port.txt
+            { echo "GET /static/hello.txt on $port"; curl --noproxy '*' -i http://127.0.0.1:$port/static/hello.txt; } > evidence/curl-public-$port.txt
+          done
+          python3 verify.py --external
           python3 - <<'PY'
-          import os
+          import json, os, platform
           from pathlib import Path
-          import xml.etree.ElementTree as ET
+          p = Path('evidence/results.json')
+          d = json.loads(p.read_text())
+          d['execution'] = 'Docker Compose on GitHub Actions Ubuntu 24.04'
+          d['run_url'] = f"https://github.com/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}"
+          d['source_commit'] = os.environ['GITHUB_SHA']
+          p.write_text(json.dumps(d, ensure_ascii=False, indent=2))
           with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as out:
-              out.write('## Tests and SAST\n\n')
-              for report in Path('target/surefire-reports').glob('TEST-*.xml'):
-                  suite = ET.parse(report).getroot()
-                  out.write(f"JUnit: **{suite.get('tests')} tests**, {suite.get('failures')} failures, {suite.get('errors')} errors, {suite.get('skipped')} skipped.\n\n")
-              report = Path('target/spotbugsXml.xml')
-              if report.exists():
-                  root = ET.parse(report).getroot()
-                  out.write(f"SpotBugs + Find Security Bugs: **{len(root.findall('BugInstance'))} security findings**.\n\n")
-                  errors = root.find('Errors')
-                  out.write(f"Analysis errors: **{errors.get('errors', '0') if errors is not None else '0'}**.\n\n")
-              else:
-                  out.write('SAST report unavailable; inspect the failed step.\n')
-              out.write('Raw XML reports: **tests-and-sast** artifact.\n')
+              out.write('# CVE-2024-23334 Docker experiment\n\n')
+              out.write(f"Checks passed: **{d['passed']}/{d['total']}**\n\n")
+              out.write('| Service | aiohttp | follow_symlinks | Traversal | Public file |\n|---|---|---|---|---|\n')
+              for v in d['variants']:
+                  c = {x['case']: x for x in v['cases']}
+                  out.write(f"| {v['name']} | {v['aiohttp']} | {v['follow_symlinks']} | {c['traversal']['status']} | {c['static']['status']} |\n")
           PY
-      - name: Upload test and SAST reports
+          cat evidence/curl-attack-8081.txt
+          cat evidence/curl-public-8081.txt
+          cat evidence/curl-attack-8082.txt
+      - name: Stop laboratory containers
+        if: always()
+        run: docker compose down 2>&1 | tee evidence/cleanup.txt
+      - name: Upload raw Docker and HTTP evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: tests-and-sast
-          path: |
-            target/surefire-reports/
-            target/spotbugsXml.xml
-  sca:
-    runs-on: ubuntu-latest
-    timeout-minutes: 60
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '21'
-          cache: maven
-      - name: Cache vulnerability database
-        uses: actions/cache@v4
-        with:
-          path: ~/.m2/repository/org/owasp/dependency-check-data
-          key: dependency-check-${{ runner.os }}-${{ github.run_id }}
-          restore-keys: dependency-check-${{ runner.os }}-
-      - name: OWASP Dependency-Check
-        run: mvn -B -ntp dependency-check:check
-      - name: Summarize SCA
-        if: always()
-        run: |
-          python3 - <<'PY'
-          import json, os
-          from pathlib import Path
-          report = Path('target/dependency-check-report.json')
-          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as out:
-              out.write('## OWASP Dependency-Check\n\n')
-              if report.exists():
-                  data = json.loads(report.read_text())
-                  deps = data.get('dependencies', [])
-                  findings = [v for d in deps for v in d.get('vulnerabilities', [])]
-                  high = [v for v in findings if max(v.get('cvssv4', {}).get('baseScore', 0), v.get('cvssv3', {}).get('baseScore', 0), v.get('cvssv2', {}).get('score', 0)) >= 7]
-                  out.write(f"Dependencies analyzed: **{len(deps)}**.\n\n")
-                  out.write(f"Known vulnerability matches: **{len(findings)}**.\n\n")
-                  out.write(f"Matches with CVSS >= 7: **{len(high)}**.\n\n")
-                  out.write('Sources: NVD JSON 2.0 feeds. Reports: **dependency-check** artifact (HTML / JSON).\n')
-              else:
-                  out.write('SCA report unavailable; inspect the failed step.\n')
-          PY
-      - name: Upload SCA reports
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: dependency-check
-          path: |
-            target/dependency-check-report.html
-            target/dependency-check-report.json
+          name: lab2-docker-evidence
+          path: lab2/evidence/
+          retention-days: 30
