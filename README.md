@@ -2,11 +2,11 @@
 
 Лабораторная работа 1 по дисциплине «Информационная безопасность». Автор: Руссу Алексей Иванович, группа P3417, Университет ИТМО, 2026.
 
-Приложение регистрирует пользователей, выдаёт JWT после проверки пароля и возвращает профиль текущего пользователя. Стек: Java 21, Spring Boot 3.5.16, Spring Security, Spring Data JPA/Hibernate, H2 2.5.252, Maven. Данные сохраняются в локальной базе `data/secure-api`; консоль H2 отключена. Версия H2 явно обновлена относительно BOM Spring Boot: выбран выпуск с актуальными исправлениями безопасности.
+Приложение регистрирует пользователей, выдаёт JWT после проверки пароля и возвращает профиль текущего пользователя. Стек: Java 21, Spring Boot 4.1.2, Spring Security, Spring Data JPA/Hibernate, H2 2.5.252, Maven. Данные сохраняются в локальной базе `data/secure-api`; консоль H2 отключена. Версия H2 явно обновлена относительно BOM Spring Boot. После первоначального SCA стек обновлён до Spring Boot 4.1.2 для устранения обнаруженных уязвимостей зависимостей.
 
 ## Запуск
 
-Требуются JDK 21 и Maven 3.9. Из корня проекта выполните `mvn verify`. Перед запуском задайте два независимых случайных секрета. Пример для PowerShell:
+Требуются JDK 21 и Maven 3.9. Из корня проекта выполните `mvn verify`. Перед запуском задайте два независимых случайных секрета. Пример для PowerShell 7:
 
 ```powershell
 $env:JWT_SECRET = [Convert]::ToBase64String(
@@ -49,8 +49,14 @@ java -jar target/secure-rest-api-1.0.0.jar
 Следующие команды предназначены для Bash; пароль в примере используется только для учебной проверки. Сначала сохраните запросы в файлы:
 
 ```bash
-printf '%s' '{"login":"student","password":"Example-Lab-Password-2026!","displayName":"Student"}' > register.json
-printf '%s' '{"login":"student","password":"Example-Lab-Password-2026!"}' > login.json
+cat > register.json <<'JSON'
+{"login":"student",
+ "password":"Example-Lab-Password-2026!",
+ "displayName":"Student"}
+JSON
+cat > login.json <<'JSON'
+{"login":"student","password":"Example-Lab-Password-2026!"}
+JSON
 curl -i -H 'Content-Type: application/json' \
   --data-binary @register.json http://127.0.0.1:8080/auth/register
 curl -H 'Content-Type: application/json' \
@@ -60,7 +66,13 @@ curl -i -H "Authorization: Bearer $TOKEN" \
   http://127.0.0.1:8080/api/data
 ```
 
-В последней команде переменная `TOKEN` должна содержать значение `accessToken` из ответа входа. Пример его получения с `jq`: `TOKEN=$(curl -s -H 'Content-Type: application/json' --data-binary @login.json http://127.0.0.1:8080/auth/login | jq -r .accessToken)`.
+В последней команде переменная `TOKEN` должна содержать значение `accessToken` из ответа входа. Пример его получения с `jq`:
+
+```bash
+TOKEN=$(curl -s -H 'Content-Type: application/json' \
+  --data-binary @login.json \
+  http://127.0.0.1:8080/auth/login | jq -r .accessToken)
+```
 
 ## Реализованные меры защиты
 
