@@ -106,7 +106,15 @@ SCA: OWASP Dependency-Check 13.0.0 анализирует зависимости
 
 Workflow `.github/workflows/ci.yml` запускается при каждом `push`, `pull_request` и вручную через `workflow_dispatch`. Задание `test-and-sast` собирает проект, выполняет тесты и SpotBugs. Задание `sca` запускает Dependency-Check независимо. При ошибке проверка остаётся красной: `continue-on-error` не используется. XML/HTML/JSON-отчёты сохраняются в Actions Artifacts даже при неуспешном анализе, если сканер успел их создать. Токен workflow имеет только `contents: read`.
 
-После публикации откройте вкладку Actions, дождитесь зелёного запуска обоих заданий и скопируйте постоянную ссылку на конкретный запуск. Для отчёта нужны скриншоты шагов SpotBugs и Dependency-Check именно из этого запуска.
+Контрольный запуск с отчётами: [GitHub Actions №2](https://github.com/aeshabb/ib-lab1-secure-api/actions/runs/40759640889). Актуальные запуски находятся на [странице workflow](https://github.com/aeshabb/ib-lab1-secure-api/actions/workflows/ci.yml). Краткие сводки на странице Actions автоматически формируются из XML- и JSON-отчётов. Исходные отчёты можно скачать из артефактов `tests-and-sast` и `dependency-check`.
+
+Проверка 28 октября 2026 года: 21 тест прошёл, ошибок SAST — 0; SCA проанализировал 49 зависимостей, совпадений с известными уязвимостями — 0. При первоначальном анализе более старого стека найдено 51 совпадение с CVE в 7 JAR-файлах. После обновления Spring Boot с 3.5.16 до 4.1.2 повторный анализ завершился без находок. CVE не подавлялись, порог отказа CVSS ≥ 7 сохранён.
+
+В репозитории сохранены неизменённые отчёты из артефактов запуска №2: [SAST XML](docs/reports/spotbugs.xml), [SCA HTML](docs/reports/dependency-check.html), [SCA JSON](docs/reports/dependency-check.json). Ниже показаны успешные шаги сканеров в Actions.
+
+![Результаты тестов и SAST в GitHub Actions](docs/actions-sast.png)
+
+![Результаты SCA в GitHub Actions](docs/actions-sca.png)
 
 ## Границы учебной реализации
 
