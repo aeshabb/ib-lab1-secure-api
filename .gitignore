@@ -1,0 +1,9 @@
+/tmp/
+/output/
+/target/
+/.idea/
+*.iml
+.env
+/data/
+*.log
+
