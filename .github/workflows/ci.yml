@@ -26,7 +26,7 @@ jobs:
           docker compose config > evidence/compose-resolved.yml
       - name: Start vulnerable Vulhub container and reproduce attack
         run: |
-          docker compose up -d vulnerable 2>&1 | tee evidence/start-vulnerable.txt
+          docker compose up --build -d vulnerable 2>&1 | tee evidence/start-vulnerable.txt
           for i in $(seq 1 60); do curl --noproxy '*' -fsS http://127.0.0.1:8080/ && break || sleep 1; done
           docker compose ps | tee evidence/containers-before.txt
           docker compose exec -T vulnerable python -c "import aiohttp,sys;print(sys.version);print('aiohttp='+aiohttp.__version__)" | tee evidence/version-before.txt
@@ -74,7 +74,9 @@ jobs:
           cat evidence/curl-attack-8082.txt
       - name: Stop laboratory containers
         if: always()
-        run: docker compose down 2>&1 | tee evidence/cleanup.txt
+        run: |
+          docker compose logs --no-color > evidence/container-logs.txt 2>&1 || true
+          docker compose down 2>&1 | tee evidence/cleanup.txt
       - name: Upload raw Docker and HTTP evidence
         if: always()
         uses: actions/upload-artifact@v4
