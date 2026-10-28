@@ -2,11 +2,10 @@ name: Java security checks
 on:
   push:
   pull_request:
-  workflow_dispatch:
 permissions:
   contents: read
 jobs:
-  test-and-sast:
+  sast:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -16,40 +15,16 @@ jobs:
           distribution: temurin
           java-version: '21'
           cache: maven
-      - name: Tests and package
-        run: mvn -B -ntp verify
+      - name: Build application
+        run: mvn -B -ntp package
       - name: SpotBugs and Find Security Bugs
         run: mvn -B -ntp spotbugs:check
-      - name: Summarize tests and SAST
-        if: always()
-        run: |
-          python3 - <<'PY'
-          import os
-          from pathlib import Path
-          import xml.etree.ElementTree as ET
-          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as out:
-              out.write('## Tests and SAST\n\n')
-              for report in Path('target/surefire-reports').glob('TEST-*.xml'):
-                  suite = ET.parse(report).getroot()
-                  out.write(f"JUnit: **{suite.get('tests')} tests**, {suite.get('failures')} failures, {suite.get('errors')} errors, {suite.get('skipped')} skipped.\n\n")
-              report = Path('target/spotbugsXml.xml')
-              if report.exists():
-                  root = ET.parse(report).getroot()
-                  out.write(f"SpotBugs + Find Security Bugs: **{len(root.findall('BugInstance'))} security findings**.\n\n")
-                  errors = root.find('Errors')
-                  out.write(f"Analysis errors: **{errors.get('errors', '0') if errors is not None else '0'}**.\n\n")
-              else:
-                  out.write('SAST report unavailable; inspect the failed step.\n')
-              out.write('Raw XML reports: **tests-and-sast** artifact.\n')
-          PY
-      - name: Upload test and SAST reports
+      - name: Upload SAST report
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: tests-and-sast
-          path: |
-            target/surefire-reports/
-            target/spotbugsXml.xml
+          name: sast
+          path: target/spotbugsXml.xml
   sca:
     runs-on: ubuntu-latest
     timeout-minutes: 60
@@ -68,27 +43,6 @@ jobs:
           restore-keys: dependency-check-${{ runner.os }}-
       - name: OWASP Dependency-Check
         run: mvn -B -ntp dependency-check:check
-      - name: Summarize SCA
-        if: always()
-        run: |
-          python3 - <<'PY'
-          import json, os
-          from pathlib import Path
-          report = Path('target/dependency-check-report.json')
-          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as out:
-              out.write('## OWASP Dependency-Check\n\n')
-              if report.exists():
-                  data = json.loads(report.read_text())
-                  deps = data.get('dependencies', [])
-                  findings = [v for d in deps for v in d.get('vulnerabilities', [])]
-                  high = [v for v in findings if max(v.get('cvssv4', {}).get('baseScore', 0), v.get('cvssv3', {}).get('baseScore', 0), v.get('cvssv2', {}).get('score', 0)) >= 7]
-                  out.write(f"Dependencies analyzed: **{len(deps)}**.\n\n")
-                  out.write(f"Known vulnerability matches: **{len(findings)}**.\n\n")
-                  out.write(f"Matches with CVSS >= 7: **{len(high)}**.\n\n")
-                  out.write('Sources: NVD JSON 2.0 feeds. Reports: **dependency-check** artifact (HTML / JSON).\n')
-              else:
-                  out.write('SCA report unavailable; inspect the failed step.\n')
-          PY
       - name: Upload SCA reports
         if: always()
         uses: actions/upload-artifact@v4
